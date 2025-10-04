@@ -125,23 +125,6 @@ endpoints:
   GET - https://xxxxx.execute-api.us-east-1.amazonaws.com/dev/appointments
 ```
 
-## 🔍 Logs y Debug
-
-### Ver logs en desarrollo local
-Los logs aparecen directamente en la consola donde ejecutaste `serverless offline`.
-
-### Ver logs en AWS
-```bash
-# Ver logs de una función específica
-npx serverless logs -f createAppointment
-
-# Ver logs en tiempo real
-npx serverless logs -f createAppointment --tail
-
-# Ver logs de notificaciones
-npx serverless logs -f notifyAppointment
-```
-
 ## 🧪 Testing
 
 ### Probar Creación de Cita (Local)
