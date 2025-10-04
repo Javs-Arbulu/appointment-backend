@@ -1,0 +1,711 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The AWS CloudFormation template for this Serverless application",
+  "Resources": {
+    "ServerlessDeploymentBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ServerlessDeploymentBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "ServerlessDeploymentBucket"
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition"
+                      },
+                      ":s3:::",
+                      {
+                        "Ref": "ServerlessDeploymentBucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition"
+                      },
+                      ":s3:::",
+                      {
+                        "Ref": "ServerlessDeploymentBucket"
+                      }
+                    ]
+                  ]
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": false
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "CreateAppointmentLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/appointment-service-dev-createAppointment"
+      }
+    },
+    "GetAppointmentsLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/appointment-service-dev-getAppointments"
+      }
+    },
+    "NotifyAppointmentLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/appointment-service-dev-notifyAppointment"
+      }
+    },
+    "IamRoleLambdaExecution": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": {
+              "Fn::Join": [
+                "-",
+                [
+                  "appointment-service",
+                  "dev",
+                  "lambda"
+                ]
+              ]
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:CreateLogGroup",
+                    "logs:TagResource"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/appointment-service-dev*:*"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/appointment-service-dev*:*:*"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:PutItem",
+                    "dynamodb:Scan",
+                    "dynamodb:GetItem",
+                    "dynamodb:UpdateItem",
+                    "dynamodb:DeleteItem"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "AppointmentsTable",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:*"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "NotificationsQueue",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sns:*"
+                  ],
+                  "Resource": {
+                    "Ref": "NotificationsTopic"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "events:*"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "ReminderBus",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:ReceiveMessage",
+                    "sqs:DeleteMessage",
+                    "sqs:GetQueueAttributes"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::GetAtt": [
+                        "NotificationsQueue",
+                        "Arn"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "Path": "/",
+        "RoleName": {
+          "Fn::Join": [
+            "-",
+            [
+              "appointment-service",
+              "dev",
+              {
+                "Ref": "AWS::Region"
+              },
+              "lambdaRole"
+            ]
+          ]
+        }
+      }
+    },
+    "CreateAppointmentLambdaFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ServerlessDeploymentBucket"
+          },
+          "S3Key": "serverless/appointment-service/dev/1759544620506-2025-10-04T02:23:40.506Z/appointment-service.zip"
+        },
+        "Handler": "src/handlers/createAppointment.main",
+        "Runtime": "nodejs18.x",
+        "FunctionName": "appointment-service-dev-createAppointment",
+        "MemorySize": 1024,
+        "Timeout": 6,
+        "Environment": {
+          "Variables": {
+            "APPOINTMENTS_TABLE": "appointment-service-Appointments-dev",
+            "NOTIFICATIONS_QUEUE_URL": "https://sqs.us-east-2.amazonaws.com/984105454712/notifications",
+            "NOTIFICATIONS_TOPIC_ARN": "",
+            "AWS_NOTIFICATIONS_QUEUE_URL": {
+              "Fn::GetAtt": [
+                "NotificationsQueue",
+                "QueueUrl"
+              ]
+            },
+            "AWS_NOTIFICATIONS_TOPIC_ARN": {
+              "Ref": "NotificationsTopic"
+            },
+            "LOCAL_NOTIFICATIONS_TOPIC_ARN": "arn:aws:sns:us-east-1:000000000000:local-topic"
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
+        }
+      },
+      "DependsOn": [
+        "CreateAppointmentLogGroup"
+      ]
+    },
+    "GetAppointmentsLambdaFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ServerlessDeploymentBucket"
+          },
+          "S3Key": "serverless/appointment-service/dev/1759544620506-2025-10-04T02:23:40.506Z/appointment-service.zip"
+        },
+        "Handler": "src/handlers/getAppointments.main",
+        "Runtime": "nodejs18.x",
+        "FunctionName": "appointment-service-dev-getAppointments",
+        "MemorySize": 1024,
+        "Timeout": 6,
+        "Environment": {
+          "Variables": {
+            "APPOINTMENTS_TABLE": "appointment-service-Appointments-dev",
+            "NOTIFICATIONS_QUEUE_URL": "https://sqs.us-east-2.amazonaws.com/984105454712/notifications",
+            "NOTIFICATIONS_TOPIC_ARN": "",
+            "AWS_NOTIFICATIONS_QUEUE_URL": {
+              "Fn::GetAtt": [
+                "NotificationsQueue",
+                "QueueUrl"
+              ]
+            },
+            "AWS_NOTIFICATIONS_TOPIC_ARN": {
+              "Ref": "NotificationsTopic"
+            },
+            "LOCAL_NOTIFICATIONS_TOPIC_ARN": "arn:aws:sns:us-east-1:000000000000:local-topic"
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
+        }
+      },
+      "DependsOn": [
+        "GetAppointmentsLogGroup"
+      ]
+    },
+    "NotifyAppointmentLambdaFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ServerlessDeploymentBucket"
+          },
+          "S3Key": "serverless/appointment-service/dev/1759544620506-2025-10-04T02:23:40.506Z/appointment-service.zip"
+        },
+        "Handler": "src/handlers/notifyAppointment.main",
+        "Runtime": "nodejs18.x",
+        "FunctionName": "appointment-service-dev-notifyAppointment",
+        "MemorySize": 1024,
+        "Timeout": 6,
+        "Environment": {
+          "Variables": {
+            "APPOINTMENTS_TABLE": "appointment-service-Appointments-dev",
+            "NOTIFICATIONS_QUEUE_URL": "https://sqs.us-east-2.amazonaws.com/984105454712/notifications",
+            "NOTIFICATIONS_TOPIC_ARN": "",
+            "AWS_NOTIFICATIONS_QUEUE_URL": {
+              "Fn::GetAtt": [
+                "NotificationsQueue",
+                "QueueUrl"
+              ]
+            },
+            "AWS_NOTIFICATIONS_TOPIC_ARN": {
+              "Ref": "NotificationsTopic"
+            },
+            "LOCAL_NOTIFICATIONS_TOPIC_ARN": "arn:aws:sns:us-east-1:000000000000:local-topic"
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
+        }
+      },
+      "DependsOn": [
+        "NotifyAppointmentLogGroup"
+      ]
+    },
+    "CreateAppointmentLambdaVersionhARd8ebDnfejOM0tdJ5nczVf5MDvnMfxSyvRJFgNkJo": {
+      "Type": "AWS::Lambda::Version",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "CreateAppointmentLambdaFunction"
+        },
+        "CodeSha256": "LUApe+U9HkYF/HLvXqryKUPLJvgfnwfuYn8SKNIEbnE="
+      }
+    },
+    "GetAppointmentsLambdaVersionT9I2uxbjeZFh5MPZE9RBksGvgEeoEIVqoprIkRhjK54": {
+      "Type": "AWS::Lambda::Version",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "GetAppointmentsLambdaFunction"
+        },
+        "CodeSha256": "LUApe+U9HkYF/HLvXqryKUPLJvgfnwfuYn8SKNIEbnE="
+      }
+    },
+    "NotifyAppointmentLambdaVersionH9TbbBJJIvYHsOd6Am7iJ2BDCBWSMBt3ADh4i9QA5k": {
+      "Type": "AWS::Lambda::Version",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "NotifyAppointmentLambdaFunction"
+        },
+        "CodeSha256": "LUApe+U9HkYF/HLvXqryKUPLJvgfnwfuYn8SKNIEbnE="
+      }
+    },
+    "NotifyAppointmentEventSourceMappingSQSNotificationsQueue": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "DependsOn": [
+        "IamRoleLambdaExecution"
+      ],
+      "Properties": {
+        "BatchSize": 10,
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "NotificationsQueue",
+            "Arn"
+          ]
+        },
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "NotifyAppointmentLambdaFunction",
+            "Arn"
+          ]
+        },
+        "Enabled": true
+      }
+    },
+    "HttpApi": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": "dev-appointment-service",
+        "ProtocolType": "HTTP"
+      }
+    },
+    "HttpApiStage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "StageName": "$default",
+        "AutoDeploy": true,
+        "DefaultRouteSettings": {
+          "DetailedMetricsEnabled": false
+        }
+      }
+    },
+    "CreateAppointmentLambdaPermissionHttpApi": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "CreateAppointmentLambdaFunction",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "HttpApi"
+              },
+              "/*"
+            ]
+          ]
+        }
+      }
+    },
+    "HttpApiIntegrationCreateAppointment": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "CreateAppointmentLambdaFunction",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 30000
+      }
+    },
+    "HttpApiRoutePostAppointments": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "RouteKey": "POST /appointments",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "HttpApiIntegrationCreateAppointment"
+              }
+            ]
+          ]
+        }
+      },
+      "DependsOn": "HttpApiIntegrationCreateAppointment"
+    },
+    "GetAppointmentsLambdaPermissionHttpApi": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "GetAppointmentsLambdaFunction",
+            "Arn"
+          ]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition"
+              },
+              ":execute-api:",
+              {
+                "Ref": "AWS::Region"
+              },
+              ":",
+              {
+                "Ref": "AWS::AccountId"
+              },
+              ":",
+              {
+                "Ref": "HttpApi"
+              },
+              "/*"
+            ]
+          ]
+        }
+      }
+    },
+    "HttpApiIntegrationGetAppointments": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "GetAppointmentsLambdaFunction",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 30000
+      }
+    },
+    "HttpApiRouteGetAppointments": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "RouteKey": "GET /appointments",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "HttpApiIntegrationGetAppointments"
+              }
+            ]
+          ]
+        }
+      },
+      "DependsOn": "HttpApiIntegrationGetAppointments"
+    },
+    "AppointmentsTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "TableName": "appointment-service-Appointments-dev",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "id",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "id",
+            "KeyType": "HASH"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST"
+      }
+    },
+    "NotificationsQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": "appointment-service-Notifications-dev"
+      }
+    },
+    "NotificationsTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": "appointment-service-Notifications-dev"
+      }
+    },
+    "ReminderBus": {
+      "Type": "AWS::Events::EventBus",
+      "Properties": {
+        "Name": "appointment-service-ReminderBus-dev"
+      }
+    }
+  },
+  "Outputs": {
+    "ServerlessDeploymentBucketName": {
+      "Value": {
+        "Ref": "ServerlessDeploymentBucket"
+      },
+      "Export": {
+        "Name": "sls-appointment-service-dev-ServerlessDeploymentBucketName"
+      }
+    },
+    "CreateAppointmentLambdaFunctionQualifiedArn": {
+      "Description": "Current Lambda function version",
+      "Value": {
+        "Ref": "CreateAppointmentLambdaVersionhARd8ebDnfejOM0tdJ5nczVf5MDvnMfxSyvRJFgNkJo"
+      },
+      "Export": {
+        "Name": "sls-appointment-service-dev-CreateAppointmentLambdaFunctionQualifiedArn"
+      }
+    },
+    "GetAppointmentsLambdaFunctionQualifiedArn": {
+      "Description": "Current Lambda function version",
+      "Value": {
+        "Ref": "GetAppointmentsLambdaVersionT9I2uxbjeZFh5MPZE9RBksGvgEeoEIVqoprIkRhjK54"
+      },
+      "Export": {
+        "Name": "sls-appointment-service-dev-GetAppointmentsLambdaFunctionQualifiedArn"
+      }
+    },
+    "NotifyAppointmentLambdaFunctionQualifiedArn": {
+      "Description": "Current Lambda function version",
+      "Value": {
+        "Ref": "NotifyAppointmentLambdaVersionH9TbbBJJIvYHsOd6Am7iJ2BDCBWSMBt3ADh4i9QA5k"
+      },
+      "Export": {
+        "Name": "sls-appointment-service-dev-NotifyAppointmentLambdaFunctionQualifiedArn"
+      }
+    },
+    "HttpApiId": {
+      "Description": "Id of the HTTP API",
+      "Value": {
+        "Ref": "HttpApi"
+      },
+      "Export": {
+        "Name": "sls-appointment-service-dev-HttpApiId"
+      }
+    },
+    "HttpApiUrl": {
+      "Description": "URL of the HTTP API",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "https://",
+            {
+              "Ref": "HttpApi"
+            },
+            ".execute-api.",
+            {
+              "Ref": "AWS::Region"
+            },
+            ".",
+            {
+              "Ref": "AWS::URLSuffix"
+            }
+          ]
+        ]
+      },
+      "Export": {
+        "Name": "sls-appointment-service-dev-HttpApiUrl"
+      }
+    },
+    "NotificationsQueueUrl": {
+      "Value": {
+        "Fn::GetAtt": [
+          "NotificationsQueue",
+          "QueueUrl"
+        ]
+      },
+      "Export": {
+        "Name": "appointment-service-dev-NotificationsQueueUrl"
+      }
+    },
+    "NotificationsTopicArn": {
+      "Value": {
+        "Ref": "NotificationsTopic"
+      },
+      "Export": {
+        "Name": "appointment-service-dev-NotificationsTopicArn"
+      }
+    }
+  }
+}
